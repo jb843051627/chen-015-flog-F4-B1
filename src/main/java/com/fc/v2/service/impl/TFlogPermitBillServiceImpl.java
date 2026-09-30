@@ -36,8 +36,11 @@ public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
         if (r == null || approver == null || approver.trim().isEmpty()) {
             return null;
         }
-        r.setNodeNo(Integer.valueOf((r.getNodeNo() == null ? 0 : r.getNodeNo()) + 1));
-        r.setStatus(Integer.valueOf(r.getNodeNo() >= MAX_NODE ? STATUS_PASS : STATUS_RUNNING));
+        int node = r.getNodeNo() == null ? 0 : r.getNodeNo();
+        int next = node + 1;
+        r.setNodeNo(next);
+        // 以推进后的级次判顶：到顶核讫，否则仍在核。
+        r.setStatus(next >= MAX_NODE ? STATUS_PASS : STATUS_RUNNING);
         this.flogPermitBillMapper.updateById(r);
         return r;
     }
@@ -48,6 +51,8 @@ public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
         if (r == null) {
             return null;
         }
+        // 否决即落"已打回"，与勾销卡了断/在办两套落定语义分开但状态值钉死。
+        r.setStatus(STATUS_VETO);
         this.flogPermitBillMapper.updateById(r);
         return r;
     }
@@ -59,7 +64,9 @@ public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
             return null;
         }
         int node = r.getNodeNo() == null ? 0 : r.getNodeNo();
-        r.setNodeNo(Integer.valueOf(Math.max(0, node - 1)));
+        r.setNodeNo(Math.max(0, node - 1));
+        // 退回上一环节：级次回退且状态必须拉回"在核"，不得仍挂已核讫。
+        r.setStatus(STATUS_RUNNING);
         this.flogPermitBillMapper.updateById(r);
         return r;
     }

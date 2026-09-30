@@ -69,19 +69,14 @@ public class TFlogApplyCardServiceImpl extends ServiceImpl<TFlogApplyCardMapper,
                 return 0;
             }
         }
-        TFlogStandDoc bandArch = flogStandDocMapper.selectById(record.getSiteId());
+        TFlogStandDoc bandArch = refArch;
         BigDecimal bandVal = record.getQty();
         int bandLevel = 0;
         if (bandVal != null && bandArch != null) {
-            if (bandVal.compareTo(bandArch.getTh1Max()) <= 0) {
-                bandLevel = 1;
-            } else if (bandVal.compareTo(bandArch.getTh2Max()) <= 0) {
-                bandLevel = 2;
-            } else if (bandVal.compareTo(bandArch.getTh3Max()) <= 0) {
-                bandLevel = 3;
-            } else {
-                bandLevel = 4;
-            }
+            // 分档规矩与规则线共用同一份口径（等于上限算高一档、阈值缺失安全）；
+            // 阈值只取上面经 del_flag+status 校验过的同一条在册底档，不再二次查库另取。
+            bandLevel = com.fc.v2.service.flog.FlogCaliber.grade(
+                    bandArch.getTh1Max(), bandArch.getTh2Max(), bandArch.getTh3Max(), bandVal);
         }
         record.setGradeLevel(bandLevel);
 

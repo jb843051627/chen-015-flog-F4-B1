@@ -19,6 +19,7 @@ import com.fc.v2.service.ITFlogCloseCardService;
 public class TFlogCloseCardServiceImpl implements ITFlogCloseCardService {
 
     private static final int MAX_STAGE = 3;
+    private static final int STATUS_NOTSTARTED = 0;
     private static final int STATUS_ACTIVE = 1;
     private static final int STATUS_TERMINAL = 2;
 
@@ -42,8 +43,16 @@ public class TFlogCloseCardServiceImpl implements ITFlogCloseCardService {
             return null;
         }
         int st = r.getStage() == null ? 0 : r.getStage();
-        r.setStage(Math.min(st + 2, MAX_STAGE));
-        r.setStatus(STATUS_ACTIVE);
+        if (st >= MAX_STAGE) {
+            // 已到了断段，不再前进，保持已了断。
+            r.setStatus(STATUS_TERMINAL);
+            r.setLastAction(remark);
+            this.flogCloseCardMapper.updateById(r);
+            return r;
+        }
+        int next = Math.min(st + 1, MAX_STAGE);
+        r.setStage(next);
+        r.setStatus(next >= MAX_STAGE ? STATUS_TERMINAL : STATUS_ACTIVE);
         r.setLastAction(remark);
         this.flogCloseCardMapper.updateById(r);
         return r;
@@ -55,8 +64,11 @@ public class TFlogCloseCardServiceImpl implements ITFlogCloseCardService {
         if (r == null) {
             return null;
         }
-        r.setStage(0);
-        r.setStatus(STATUS_ACTIVE);
+        int st = r.getStage() == null ? 0 : r.getStage();
+        int prev = Math.max(st - 1, 0);
+        r.setStage(prev);
+        // 只回退一档；回到未推进的段次即未起，其余（含从了断退回）一律在办。
+        r.setStatus(prev == 0 ? STATUS_NOTSTARTED : STATUS_ACTIVE);
         r.setLastAction(remark);
         this.flogCloseCardMapper.updateById(r);
         return r;
@@ -66,6 +78,9 @@ public class TFlogCloseCardServiceImpl implements ITFlogCloseCardService {
     public boolean updateContent(Long id, String remark) {
         TFlogCloseCard r = this.flogCloseCardMapper.selectById(id);
         if (r == null) {
+            return false;
+        }
+        if (r.getStatus() != null && r.getStatus().intValue() == STATUS_TERMINAL) {
             return false;
         }
         r.setContent(remark);
@@ -78,7 +93,12 @@ public class TFlogCloseCardServiceImpl implements ITFlogCloseCardService {
         if (r == null) {
             return false;
         }
-        return this.flogCloseCardMapper.deleteById(id) > 0;
+        if (r.getStatus() != null && r.getStatus().intValue() == STATUS_TERMINAL) {
+            return false;
+        }
+        // 软删：置 del_flag=1，不动物理行，与全库删除标记口径一致。
+        r.setDelFlag(1);
+        return this.flogCloseCardMapper.updateById(r) > 0;
     }
 
 }

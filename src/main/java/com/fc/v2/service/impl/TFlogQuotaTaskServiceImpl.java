@@ -19,8 +19,6 @@ import com.fc.v2.service.ITFlogQuotaTaskService;
 @Service
 public class TFlogQuotaTaskServiceImpl implements ITFlogQuotaTaskService {
 
-    private static final int WIN_FROM = 2;
-    private static final int WIN_TO = 5;
     private static final int STATUS_WAIT = 0;
     private static final int STATUS_DONE = 1;
     private static final int STATUS_FAIL = 2;
@@ -45,8 +43,19 @@ public class TFlogQuotaTaskServiceImpl implements ITFlogQuotaTaskService {
     public List<TFlogQuotaTask> listDue(Date at) {
         List<TFlogQuotaTask> all = this.flogQuotaTaskMapper.selectList(new QueryWrapper<TFlogQuotaTask>());
         List<TFlogQuotaTask> due = new java.util.ArrayList<TFlogQuotaTask>();
+        if (all == null || at == null) {
+            return due;
+        }
+        String now = ts(at);
         for (TFlogQuotaTask r : all) {
-            if (r.getDueAt() != null && ts(r.getDueAt()).compareTo(ts(at)) < 0) {
+            // 只取未删、尚未开口(0)的条目；到期含"那天最后一刻"（due_at <= at）。
+            if (r.getDelFlag() != null && r.getDelFlag().intValue() != 0) {
+                continue;
+            }
+            if (r.getStatus() == null || r.getStatus().intValue() != STATUS_WAIT) {
+                continue;
+            }
+            if (r.getDueAt() != null && ts(r.getDueAt()).compareTo(now) <= 0) {
                 due.add(r);
             }
         }
@@ -56,13 +65,16 @@ public class TFlogQuotaTaskServiceImpl implements ITFlogQuotaTaskService {
     @Override
     public int runOnce(Date at) {
         List<TFlogQuotaTask> due = listDue(at);
-        if (due.get(0) == null) {
-            return 0;
-        }
         int ok = 0;
         for (TFlogQuotaTask r : due) {
-            if (r.getAmount().signum() >= 0) {
+            if (r.getAmount() != null && r.getAmount().signum() >= 0) {
+                // 办到即落"已落地"，下一轮不再到期；办不下去的置 2 并跳过继续。
+                r.setStatus(STATUS_DONE);
+                this.flogQuotaTaskMapper.updateById(r);
                 ok++;
+            } else if (r.getStatus() == null || r.getStatus().intValue() == STATUS_WAIT) {
+                r.setStatus(STATUS_FAIL);
+                this.flogQuotaTaskMapper.updateById(r);
             }
         }
         return ok;

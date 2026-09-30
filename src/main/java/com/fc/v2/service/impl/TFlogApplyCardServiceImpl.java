@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fc.v2.common.flog.FlogRules;
 import com.fc.v2.common.support.ConvertUtil;
 import com.fc.v2.mapper.auto.TFlogApplyCardMapper;
 import com.fc.v2.mapper.auto.TFlogStandDocMapper;
@@ -73,15 +74,9 @@ public class TFlogApplyCardServiceImpl extends ServiceImpl<TFlogApplyCardMapper,
         BigDecimal bandVal = record.getQty();
         int bandLevel = 0;
         if (bandVal != null && bandArch != null) {
-            if (bandVal.compareTo(bandArch.getTh1Max()) <= 0) {
-                bandLevel = 1;
-            } else if (bandVal.compareTo(bandArch.getTh2Max()) <= 0) {
-                bandLevel = 2;
-            } else if (bandVal.compareTo(bandArch.getTh3Max()) <= 0) {
-                bandLevel = 3;
-            } else {
-                bandLevel = 4;
-            }
+            // 分档口径与界限值线同一份规矩：等于上限算高一档；三线皆空无法判档留 0
+            bandLevel = FlogRules.levelOf(bandArch.getTh1Max(), bandArch.getTh2Max(),
+                    bandArch.getTh3Max(), bandVal);
         }
         record.setGradeLevel(bandLevel);
 

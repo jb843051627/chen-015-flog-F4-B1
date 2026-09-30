@@ -7,7 +7,10 @@ import com.fc.v2.model.auto.TFlogPermitBill;
 import com.fc.v2.service.ITFlogPermitBillService;
 
 /**
- * 采伐许可证逐级核签单 Service业务层处理（approval-chain 形状：多阶段签批）
+ * 采伐许可证逐级核签单 Service业务层处理（approval-chain 形状：多阶段签批）。
+ * 报批情形：0在核 1已核讫 2已打回。
+ * approve 逐级上行、到顶核讫；reject 落已打回；rollback 退回上一环节并带回在核；
+ * 已核讫为终态，不得再否决或退回。
  *
  * @author fuce
  * @date 2026-09-14
@@ -16,8 +19,6 @@ import com.fc.v2.service.ITFlogPermitBillService;
 public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
 
     private static final int MAX_NODE = 2;
-    private static final int MODE_OR = 0;
-    private static final int MODE_AND = 1;
     private static final int STATUS_RUNNING = 0;
     private static final int STATUS_PASS = 1;
     private static final int STATUS_VETO = 2;
@@ -32,22 +33,28 @@ public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
 
     @Override
     public TFlogPermitBill approve(Long id, String approver, String comment) {
-        TFlogPermitBill r = this.flogPermitBillMapper.selectById(id);
-        if (r == null || approver == null || approver.trim().isEmpty()) {
+        TFlogPermitBill r = requireMutable(id, approver);
+        if (r == null) {
             return null;
         }
-        r.setNodeNo(Integer.valueOf((r.getNodeNo() == null ? 0 : r.getNodeNo()) + 1));
-        r.setStatus(Integer.valueOf(r.getNodeNo() >= MAX_NODE ? STATUS_PASS : STATUS_RUNNING));
+        int node = r.getNodeNo() == null ? 0 : r.getNodeNo();
+        if (node >= MAX_NODE) {
+            return null;
+        }
+        int next = node + 1;
+        r.setNodeNo(next);
+        r.setStatus(next >= MAX_NODE ? STATUS_PASS : STATUS_RUNNING);
         this.flogPermitBillMapper.updateById(r);
         return r;
     }
 
     @Override
     public TFlogPermitBill reject(Long id, String approver, String comment) {
-        TFlogPermitBill r = this.flogPermitBillMapper.selectById(id);
+        TFlogPermitBill r = requireMutable(id, approver);
         if (r == null) {
             return null;
         }
+        r.setStatus(STATUS_VETO);
         this.flogPermitBillMapper.updateById(r);
         return r;
     }
@@ -55,12 +62,32 @@ public class TFlogPermitBillServiceImpl implements ITFlogPermitBillService {
     @Override
     public TFlogPermitBill rollback(Long id, String comment) {
         TFlogPermitBill r = this.flogPermitBillMapper.selectById(id);
-        if (r == null) {
+        if (r == null || isPassed(r)) {
             return null;
         }
         int node = r.getNodeNo() == null ? 0 : r.getNodeNo();
-        r.setNodeNo(Integer.valueOf(Math.max(0, node - 1)));
+        if (node <= 0) {
+            return null;
+        }
+        r.setNodeNo(node - 1);
+        r.setStatus(STATUS_RUNNING);
         this.flogPermitBillMapper.updateById(r);
         return r;
+    }
+
+    /** 单据存在、未核讫、签批人不空，方可签批/否决 */
+    private TFlogPermitBill requireMutable(Long id, String approver) {
+        if (approver == null || approver.trim().isEmpty()) {
+            return null;
+        }
+        TFlogPermitBill r = this.flogPermitBillMapper.selectById(id);
+        if (r == null || isPassed(r)) {
+            return null;
+        }
+        return r;
+    }
+
+    private boolean isPassed(TFlogPermitBill r) {
+        return r.getStatus() != null && r.getStatus().intValue() == STATUS_PASS;
     }
 }
